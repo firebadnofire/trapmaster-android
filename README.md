@@ -4,6 +4,14 @@ Trapmaster is an Android app for tracking trap shooting rounds on the range. It 
 
 ---
 
+## 📸 Screenshots
+
+<img src="https://raw.githubusercontent.com/firebadnofire/trapmaster-android/refs/heads/main/README-assets/mainmenu.png" width="320" />
+<img src="https://raw.githubusercontent.com/firebadnofire/trapmaster-android/refs/heads/main/README-assets/playasyougo.png" width="320" />
+<img src="https://raw.githubusercontent.com/firebadnofire/trapmaster-android/refs/heads/main/README-assets/recordmatchmode.png" width="320" />
+
+---
+
 ## 🎯 Core Features
 
 * **Two Recording Modes**
@@ -25,7 +33,19 @@ Trapmaster is an Android app for tracking trap shooting rounds on the range. It 
 
 ## Installation
 
-This app is avalible via F-Droid at the repo <https://fdroid.archuser.org/fdroid/repo> as well as the [release page](https://github.com/firebadnofire/trapmaster-android/releases/tag/V1.0.0)
+<a href="https://fdroid.archuser.org/fdroid/repo">
+  <img src="https://f-droid.org/badge/get-it-on.png" alt="Get it on F-Droid" width="200"/>
+</a>
+
+This app is available via the custom F-Droid repo:  
+<https://fdroid.archuser.org/fdroid/repo>
+
+**Scan to install via F-Droid:**
+
+<img src="https://raw.githubusercontent.com/firebadnofire/trapmaster-android/refs/heads/main/README-assets/fdroid.png" width="220" />
+
+It is also published on the GitHub Releases page:  
+<https://github.com/firebadnofire/trapmaster-android/releases/tag/V1.0.0>
 
 ---
 
