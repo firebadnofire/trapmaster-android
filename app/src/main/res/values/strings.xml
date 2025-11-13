@@ -1,0 +1,40 @@
+<resources>
+    <string name="app_name">Trap Coach</string>
+    <string name="home_title">Trap Coach</string>
+    <string name="start_new_game_title">Start a New Game</string>
+    <string name="start_new_game_description">Choose how you want to record your shots.</string>
+    <string name="record_as_you_go">Record As You Go</string>
+    <string name="record_full_round">Record a Full Round</string>
+    <string name="game_history_title">Game History</string>
+    <string name="export">Export</string>
+    <string name="import_stats">Import</string>
+    <string name="reset_stats">Reset Stats</string>
+    <string name="no_games_recorded">No games recorded yet.</string>
+    <string name="round_status">Round %1$d, Shot %2$d</string>
+    <string name="record_round_title">Record Round %1$d</string>
+    <string name="round_label">Round %1$d</string>
+    <string name="record_round_prompt">How many targets did you hit?</string>
+    <string name="game_over">Game Over!</string>
+    <string name="total_score">Total Score: %1$d/25</string>
+    <string name="score_out_of_25">%1$d/25</string>
+    <string name="round_score">%1$d/5</string>
+    <string name="start_new_game">Start New Game</string>
+    <string name="no_games_to_export">No games to export.</string>
+    <string name="export_file_name">trap_coach_log_%1$s.csv</string>
+    <string name="export_success">Export ready</string>
+    <string name="confirm_import_title">Import stats?</string>
+    <string name="confirm_import_message">Select a Trap Coach CSV export to merge with your current history.</string>
+    <string name="confirm_import_positive">Import</string>
+    <string name="confirm_reset_title">Reset all stats?</string>
+    <string name="confirm_reset_message">This removes all recorded games permanently.</string>
+    <string name="confirm_reset_positive">Reset</string>
+    <plurals name="import_success">
+        <item quantity="one">Imported %d game.</item>
+        <item quantity="other">Imported %d games.</item>
+    </plurals>
+    <string name="import_no_games_found">No valid games found in that file.</string>
+    <string name="import_failed">Import failed. Please try again.</string>
+    <string name="reset_success">All stats cleared.</string>
+    <string name="hit_icon_description">Hit result</string>
+    <string name="miss_icon_description">Miss result</string>
+</resources>
