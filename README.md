@@ -1,61 +1,48 @@
-# Trap Coach
+# Trapmaster
 
-Trap Coach is a **Progressive Web App (PWA)** for tracking and analyzing trap shooting sessions. It provides a clean Material Design-inspired interface, local storage for session history, and CSV export functionality — all offline-ready.
-
----
-
-## 🎯 Features
-
-* **Two Game Modes:**
-
-  * *Record As You Go*: Log each hit or miss in real time.
-  * *Record Full Round*: Quickly input results for a full round at once.
-
-* **Game Summary:**
-
-  * Displays per-round hit/miss icons.
-  * Calculates total hits across 25 shots.
-  * Shows a detailed round breakdown.
-
-* **Game History:**
-
-  * Automatically stores all games in the browser’s local storage.
-  * Displays date/time and score for each recorded session.
-  * Allows reopening any past game summary.
-
-* **Export Capability:**
-
-  * Export all stored games as a CSV file (`trap_coach_log_YYYY-MM-DD.csv`).
-  * Each row includes: `game_start_time`, `round_number`, `shot_number`, and `result`.
-
-* **Offline Support:**
-
-  * Fully functional PWA via `service-worker.js`.
-  * Can be installed to the home screen on mobile or desktop.
+Trapmaster is an Android app for tracking trap shooting rounds on the range. It focuses on fast shot entry, clear score summaries, and portable data management so you can review past sessions or share them with teammates and coaches.
 
 ---
 
-## 🧠 How It Works
+## 🎯 Core Features
 
-### Local Storage Schema
+* **Two Recording Modes**
+  * *Record as You Go* — Tap HIT or MISS for every shot and follow the on-screen counter as you move through five rounds of five targets.
+  * *Record Full Round* — Enter the total number of hits for the current round in a single tap using quick-select buttons (0–5) that auto-fill the shots.
+* **Session Summary**
+  * View a breakdown of all five rounds with icon-based shot results and per-round hit counts.
+  * See the final score out of 25 immediately after saving.
+* **History & Review**
+  * Every completed game is stored locally and listed on the home screen with date, time, and score.
+  * Reopen any previous session to revisit the detailed summary.
+* **Data Import & Export**
+  * Export all recorded games to a CSV file named `trapmaster_log_YYYY-MM-DD.csv` for backup or analysis in spreadsheets.
+  * Import CSV files in the same format to merge data captured on other devices.
+* **Maintenance Tools**
+  * Reset stored stats with a confirmation dialog when you need a clean slate.
 
-Games are stored under the key `trapCoachGames` in the browser’s Local Storage:
+---
+
+## 🧠 How Data Is Stored
+
+Trapmaster persists game history in `SharedPreferences` using JSON. Each game stores:
 
 ```json
-[
-  {
-    "rounds": [
-      { "shots": [1, 0, 1, 1, 0] },
-      { "shots": [1, 1, 0, 1, 1] }
-    ],
-    "currentRound": 0,
-    "currentShot": 0,
-    "startTime": "2025-11-11T12:00:00.000Z"
-  }
-]
+{
+  "startTime": "2025-11-11T12:00:00.000Z",
+  "rounds": [
+    { "shots": [1, 0, 1, 1, 0] },
+    { "shots": [1, 1, 0, 1, 1] },
+    { "shots": [0, 1, 1, 1, 0] },
+    { "shots": [1, 0, 1, 0, 1] },
+    { "shots": [1, 1, 1, 1, 0] }
+  ]
+}
 ```
 
-### CSV Export Format
+### CSV Layout
+
+Exported CSV rows follow the schema below. Imports expect the same structure (header row optional):
 
 ```
 game_start_time,round_number,shot_number,result
@@ -65,50 +52,60 @@ game_start_time,round_number,shot_number,result
 
 ---
 
-## 🧩 UI Overview
+## 📱 UI Overview
 
-* **Home Screen:** Start new games, review history, or export data.
-* **Record Screens:** Intuitive full-width HIT/LOSS buttons or quick-select grids.
-* **Summary Screen:** Visual overview of each round with color-coded icons.
+* **Home Screen** — Launch a new recording mode, review historical games, or access data tools.
+* **Record as You Go** — Large Material buttons make it easy to capture shots with gloves or under recoil.
+* **Record Full Round** — Grid of rounded buttons for 0–5 hits accelerates entry after each post.
+* **Summary Screen** — Color-coded icons and per-round scoring help identify trends across the round.
 
-All visuals are styled with Material Design 3 color variables and responsive layout helpers defined in CSS.
-
----
-
-## ⚙️ Technical Details
-
-* **Frontend:** Pure HTML, CSS, and Vanilla JS — no frameworks.
-* **Design:** Material 3-inspired color scheme using CSS custom properties.
-* **Storage:** Browser Local Storage.
-* **Offline:** Service Worker registration at `/trapmaster/service-worker.js`.
+Material You (Material 3) color palettes, density-aware padding, and system inset handling keep the UI comfortable on phones and tablets.
 
 ---
 
-## 📦 Installation
+## ⚙️ Technical Notes
 
-1. Serve the project directory over HTTPS or localhost.
-2. Open the app in a modern browser.
-3. Click *Add to Home Screen* or install the PWA.
-4. Start logging your sessions!
+* **Language & Stack:** Kotlin, AndroidX, and Material Components.
+* **Minimum SDK:** 26 (Android 8.0).
+* **State Management:** In-memory game builder objects that persist to JSON-backed `SharedPreferences` when a round completes.
+* **File I/O:** Uses the Storage Access Framework for CSV import/export with proper MIME filters.
+* **Testing:** Instrumented/UI tests are not included yet; manual testing is recommended after changes.
+
+---
+
+## 🚀 Building & Running
+
+1. Install [Android Studio](https://developer.android.com/studio) Giraffe or newer with the Android SDK.
+2. Clone this repository and open it in Android Studio.
+3. Sync Gradle when prompted.
+4. Connect a device or start an emulator running Android 8.0 (API 26) or higher.
+5. Run the `app` configuration to install and launch Trapmaster.
+
+To build from the command line:
+
+```bash
+./gradlew assembleDebug
+```
+
+The resulting APK will be located at `app/build/outputs/apk/debug/`.
 
 ---
 
 ## 🧾 License
 
-This project is open for personal or educational use. Attribution is appreciated if reused or modified.
+This project is open for personal or educational use. Attribution is appreciated if you reuse or modify the code.
 
 ---
 
-## 💡 Future Enhancements
+## 💡 Future Ideas
 
-* Persistent cloud sync (optional backup).
-* Advanced analytics and visual charts.
-* Integration with real-world shot sensors or scoring devices.
-* Dark mode and theme customization.
+* Cloud sync for multi-device backups.
+* Charts and heatmaps for visual performance trends.
+* Dark theme and color customization.
+* Wear OS companion for quick shot logging on the wrist.
 
 ---
 
-**Author:** Archuserorg
-**Version:** 1.0
+**Author:** Archuserorg  \
+**Version:** 1.0  \
 **Last Updated:** November 2025
-
