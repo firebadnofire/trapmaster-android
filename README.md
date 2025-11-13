@@ -23,6 +23,12 @@ Trapmaster is an Android app for tracking trap shooting rounds on the range. It 
 
 ---
 
+## Installation
+
+This app is avalible via F-Droid at the repo <https://fdroid.archuser.org/fdroid/repo> as well as the [release page](https://github.com/firebadnofire/trapmaster-android/releases/tag/V1.0.0)
+
+---
+
 ## 🧠 How Data Is Stored
 
 Trapmaster persists game history in `SharedPreferences` using JSON. Each game stores:
