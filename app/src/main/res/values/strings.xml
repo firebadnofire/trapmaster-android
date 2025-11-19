@@ -5,6 +5,7 @@
     <string name="start_new_game_description">Choose how you want to record your shots.</string>
     <string name="record_as_you_go">Record As You Go</string>
     <string name="record_full_round">Record a Full Round</string>
+    <string name="open_rtsp_stream">Open RTSP Stream</string>
     <string name="game_history_title">Game History</string>
     <string name="export">Export</string>
     <string name="import_stats">Import</string>
@@ -37,4 +38,9 @@
     <string name="reset_success">All stats cleared.</string>
     <string name="hit_icon_description">Hit result</string>
     <string name="miss_icon_description">Miss result</string>
+    <string name="rtsp_uri_title">Connect to RTSP Stream</string>
+    <string name="rtsp_uri_hint">RTSP or RTSPS URL</string>
+    <string name="rtsp_uri_positive">Connect</string>
+    <string name="rtsp_uri_error_invalid">Enter a valid RTSP or RTSPS URL.</string>
+    <string name="rtsp_uri_received">Opening %1$s</string>
 </resources>

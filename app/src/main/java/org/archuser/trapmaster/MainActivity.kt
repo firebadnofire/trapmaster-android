@@ -1,5 +1,6 @@
 package org.archuser.trapmaster
 
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
@@ -24,6 +25,7 @@ import org.archuser.trapmaster.data.RoundRecord
 import org.archuser.trapmaster.databinding.ActivityMainBinding
 import org.archuser.trapmaster.databinding.ItemGameHistoryBinding
 import org.archuser.trapmaster.databinding.ItemSummaryRoundBinding
+import org.archuser.trapmaster.ui.RtspUriDialogFragment
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -31,7 +33,7 @@ import java.util.TimeZone
 import kotlin.math.roundToInt
 import kotlin.text.Charsets
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), RtspUriDialogFragment.Callback {
 
     private lateinit var binding: ActivityMainBinding
     private val storage by lazy { GameStorage(this) }
@@ -75,6 +77,15 @@ class MainActivity : AppCompatActivity() {
         setupListeners()
         refreshHistory()
         showScreen(Screen.HOME)
+
+        if (savedInstanceState == null) {
+            intent?.let { handleIncomingIntent(it) }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        intent?.let { handleIncomingIntent(it) }
     }
 
     private fun setupWindowInsets() {
@@ -108,6 +119,7 @@ class MainActivity : AppCompatActivity() {
             summaryGame = null
             showScreen(Screen.RECORD_ROUND)
         }
+        binding.openRtspButton.setOnClickListener { showRtspDialog() }
         binding.homeButton.setOnClickListener { navigateHome() }
         binding.newGameButton.setOnClickListener { navigateHome() }
         binding.hitButton.setOnClickListener { recordShot(1) }
@@ -115,6 +127,18 @@ class MainActivity : AppCompatActivity() {
         binding.exportButton.setOnClickListener { exportGames() }
         binding.importButton.setOnClickListener { confirmImport() }
         binding.resetStatsButton.setOnClickListener { confirmReset() }
+    }
+
+    private fun showRtspDialog(initialUri: String? = null) {
+        val existing = supportFragmentManager.findFragmentByTag(RtspUriDialogFragment.TAG)
+        if (existing == null) {
+            RtspUriDialogFragment.newInstance(initialUri)
+                .show(supportFragmentManager, RtspUriDialogFragment.TAG)
+        }
+    }
+
+    override fun onRtspUriSelected(uri: Uri) {
+        handleRtspUri(uri)
     }
 
     private fun setupRoundSelector() {
@@ -415,6 +439,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSnackbar(message: String) {
         Snackbar.make(binding.root, message, Snackbar.LENGTH_SHORT).show()
+    }
+
+    private fun handleIncomingIntent(intent: Intent) {
+        if (intent.action == Intent.ACTION_VIEW) {
+            val uri = intent.data
+            if (RtspUriDialogFragment.isSupportedUri(uri)) {
+                handleRtspUri(uri!!)
+            } else if (uri != null) {
+                showSnackbar(getString(R.string.rtsp_uri_error_invalid))
+            }
+        }
+    }
+
+    private fun handleRtspUri(uri: Uri) {
+        showSnackbar(getString(R.string.rtsp_uri_received, uri.toString()))
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()

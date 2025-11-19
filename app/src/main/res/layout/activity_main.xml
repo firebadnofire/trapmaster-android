@@ -124,6 +124,22 @@
                                 app:backgroundTint="@color/md_sys_color_secondary_container"
                                 app:cornerRadius="20dp"
                                 android:textColor="@color/md_sys_color_on_secondary_container" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/openRtspButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="12dp"
+                                android:text="@string/open_rtsp_stream"
+                                android:textAllCaps="false"
+                                android:textSize="16sp"
+                                app:backgroundTint="@color/md_sys_color_primary"
+                                app:cornerRadius="20dp"
+                                app:icon="@drawable/ic_import_24"
+                                app:iconGravity="textStart"
+                                app:iconPadding="12dp"
+                                app:iconTint="@color/md_sys_color_on_primary"
+                                android:textColor="@color/md_sys_color_on_primary" />
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
 
