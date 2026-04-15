@@ -1,5 +1,26 @@
 <resources>
     <string name="app_name">Trap Coach</string>
+    <string name="start_screen_title">Trapmaster</string>
+    <string name="start_screen_message">Launch the offline build or point the container at a different HTTPS PWA.</string>
+    <string name="current_launch_target_label">Current launch target</string>
+    <string name="begin_button">Begin</string>
+    <string name="advanced_settings_button">Advanced settings</string>
+    <string name="launch_target_default">Offline bundled Trapmaster</string>
+    <string name="launch_target_custom">Custom URL:\n%1$s</string>
+    <string name="advanced_settings_title">Advanced settings</string>
+    <string name="advanced_settings_message">Set a custom HTTPS PWA URL for the Begin button. Reset returns to the bundled offline Trapmaster.</string>
+    <string name="advanced_settings_url_hint">PWA URL</string>
+    <string name="advanced_settings_helper">Example: https://firebadnofire.github.io/trapmaster/</string>
+    <string name="advanced_settings_save">Save</string>
+    <string name="advanced_settings_reset">Reset</string>
+    <string name="advanced_settings_invalid_url">Enter a valid absolute HTTPS URL, or use Reset.</string>
+    <string name="loading_trapmaster">Preparing offline Trapmaster…</string>
+    <string name="loading_details">Installing the bundled web app from local storage.</string>
+    <string name="loading_remote_details">Opening configured PWA: %1$s</string>
+    <string name="loading_retry">Retry</string>
+    <string name="loading_failed_title">Trapmaster could not be prepared</string>
+    <string name="loading_failed_message">The offline web app could not be installed locally.</string>
+    <string name="loading_failed_reason">Details: %1$s</string>
     <string name="home_title">Trap Coach</string>
     <string name="start_new_game_title">Start a New Game</string>
     <string name="start_new_game_description">Choose how you want to record your shots.</string>

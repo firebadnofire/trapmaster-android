@@ -1,440 +1,330 @@
 package org.archuser.trapmaster
 
-import android.content.res.ColorStateList
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
-import android.view.Gravity
+import android.util.Log
 import android.view.View
-import android.widget.GridLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
-import androidx.activity.result.contract.ActivityResultContracts
+import android.webkit.JsResult
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updatePadding
-import com.google.android.material.button.MaterialButton
+import androidx.webkit.WebResourceErrorCompat
+import androidx.webkit.WebViewAssetLoader
+import androidx.webkit.WebViewClientCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.snackbar.Snackbar
-import org.archuser.trapmaster.data.GameRecord
-import org.archuser.trapmaster.data.GameStorage
-import org.archuser.trapmaster.data.RoundRecord
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import org.archuser.trapmaster.databinding.ActivityMainBinding
-import org.archuser.trapmaster.databinding.ItemGameHistoryBinding
-import org.archuser.trapmaster.databinding.ItemSummaryRoundBinding
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
-import kotlin.math.roundToInt
-import kotlin.text.Charsets
+import org.archuser.trapmaster.pwa.LocalPwaManager
+import org.archuser.trapmaster.pwa.PwaLaunchSettings
+import org.archuser.trapmaster.pwa.PwaRuntime
+import org.archuser.trapmaster.pwa.TrapmasterUpdateOutcome
+import org.archuser.trapmaster.pwa.TrapmasterUpdateScheduler
+import org.archuser.trapmaster.pwa.TrapmasterUpstreamUpdater
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private val storage by lazy { GameStorage(this) }
+    private lateinit var localPwaManager: LocalPwaManager
+    private lateinit var launchSettings: PwaLaunchSettings
+    private val startupExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val updater by lazy { TrapmasterUpstreamUpdater(applicationContext) }
+    private var lastAttemptedUrl: String? = null
 
-    private var currentScreen: Screen = Screen.HOME
-    private var mutableGame: MutableGame? = null
-    private var summaryGame: GameRecord? = null
-    private var cachedGames: List<GameRecord> = emptyList()
-    private var pendingExportCsv: String? = null
-
-    private val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
-        timeZone = TimeZone.getTimeZone("UTC")
-    }
-    private val exportDateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-    private val historyFormatter = SimpleDateFormat("MMM d, yyyy • HH:mm", Locale.getDefault())
-
-    private val exportLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri: Uri? ->
-        val csv = pendingExportCsv
-        pendingExportCsv = null
-        if (uri != null && csv != null) {
-            contentResolver.openOutputStream(uri)?.use { stream ->
-                stream.write(csv.toByteArray())
-            }
-            showSnackbar(getString(R.string.export_success))
-        }
-    }
-
-    private val importLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri?.let { handleImportUri(it) }
-    }
-
-    private val importMimeTypes = arrayOf("text/csv", "text/comma-separated-values", "application/csv")
+    @Volatile
+    private var mainFrameLoadFailed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        setupWindowInsets()
-        setupRoundSelector()
-        setupListeners()
-        refreshHistory()
-        showScreen(Screen.HOME)
+        localPwaManager = LocalPwaManager(this)
+        launchSettings = PwaLaunchSettings(this)
+        binding.beginButton.setOnClickListener { launchSelectedPwa() }
+        binding.advancedSettingsButton.setOnClickListener { showAdvancedSettingsDialog() }
+        binding.retryButton.setOnClickListener { retryLaunch() }
+
+        updateLaunchTargetSummary()
+        showStartScreen()
     }
 
-    private fun setupWindowInsets() {
-        val headerPadding = binding.headerContainer.paddingTop
-        val homePadding = binding.homeScreen.paddingBottom
-        val asYouGoPadding = binding.asYouGoScreen.paddingBottom
-        val recordPadding = binding.recordRoundScreen.paddingBottom
-        val summaryPadding = binding.summaryScreen.paddingBottom
-
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            binding.headerContainer.updatePadding(top = headerPadding + systemBars.top)
-            binding.homeScreen.updatePadding(bottom = homePadding + systemBars.bottom)
-            binding.asYouGoScreen.updatePadding(bottom = asYouGoPadding + systemBars.bottom)
-            binding.recordRoundScreen.updatePadding(bottom = recordPadding + systemBars.bottom)
-            binding.summaryScreen.updatePadding(bottom = summaryPadding + systemBars.bottom)
-            insets
-        }
-
-        ViewCompat.requestApplyInsets(binding.root)
+    override fun onDestroy() {
+        binding.webView.stopLoading()
+        binding.webView.destroy()
+        startupExecutor.shutdownNow()
+        super.onDestroy()
     }
 
-    private fun setupListeners() {
-        binding.startAsYouGoButton.setOnClickListener {
-            mutableGame = createNewGame()
-            summaryGame = null
-            showScreen(Screen.AS_YOU_GO)
-        }
-        binding.startRecordRoundButton.setOnClickListener {
-            mutableGame = createNewGame()
-            summaryGame = null
-            showScreen(Screen.RECORD_ROUND)
-        }
-        binding.homeButton.setOnClickListener { navigateHome() }
-        binding.newGameButton.setOnClickListener { navigateHome() }
-        binding.hitButton.setOnClickListener { recordShot(1) }
-        binding.lossButton.setOnClickListener { recordShot(0) }
-        binding.exportButton.setOnClickListener { exportGames() }
-        binding.importButton.setOnClickListener { confirmImport() }
-        binding.resetStatsButton.setOnClickListener { confirmReset() }
-    }
+    private fun installAndLoadBundledSnapshot() {
+        showLoading(
+            title = getString(R.string.loading_trapmaster),
+            message = getString(R.string.loading_details)
+        )
 
-    private fun setupRoundSelector() {
-        binding.roundSelector.removeAllViews()
-        for (hits in 0..5) {
-            val button = MaterialButton(this).apply {
-                text = hits.toString()
-                textSize = 20f
-                isAllCaps = false
-                cornerRadius = dp(20)
-                backgroundTintList = ColorStateList.valueOf(ContextCompat.getColor(context, R.color.md_sys_color_secondary_container))
-                setTextColor(ContextCompat.getColor(context, R.color.md_sys_color_on_secondary_container))
-                setOnClickListener { recordRound(hits) }
+        startupExecutor.execute {
+            val result = runCatching {
+                localPwaManager.ensureBundledSnapshotInstalled()
+                localPwaManager.createAssetLoader()
             }
-            val params = GridLayout.LayoutParams().apply {
-                width = 0
-                height = GridLayout.LayoutParams.WRAP_CONTENT
-                columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
-                setMargins(dp(4), dp(4), dp(4), dp(4))
+
+            runOnUiThread {
+                result.onSuccess { assetLoader ->
+                    configureWebView(assetLoader)
+                    binding.webView.loadUrl(PwaRuntime.launchUrl)
+                    TrapmasterUpdateScheduler.schedule(applicationContext)
+                    startBackgroundRefresh()
+                }.onFailure { error ->
+                    val detail = error.message?.takeIf(String::isNotBlank)
+                        ?: getString(R.string.loading_failed_message)
+                    showError(
+                        title = getString(R.string.loading_failed_title),
+                        message = getString(R.string.loading_failed_reason, detail)
+                    )
+                }
             }
-            binding.roundSelector.addView(button, params)
         }
     }
 
-    private fun createNewGame(): MutableGame = MutableGame(
-        rounds = MutableList(5) { MutableList<Int?>(5) { null } },
-        currentRound = 0,
-        currentShot = 0,
-        startTimeIso = isoFormatter.format(Date())
-    )
-
-    private fun navigateHome() {
-        mutableGame = null
-        summaryGame = null
-        showScreen(Screen.HOME)
+    private fun loadConfiguredRemoteUrl(url: String) {
+        showLoading(
+            title = getString(R.string.loading_trapmaster),
+            message = getString(R.string.loading_remote_details, url)
+        )
+        configureWebView(assetLoader = null)
+        binding.webView.loadUrl(url)
+        TrapmasterUpdateScheduler.schedule(applicationContext)
+        startBackgroundRefresh()
     }
 
-    private fun showScreen(screen: Screen) {
-        currentScreen = screen
-        binding.homeScreen.visibility = if (screen == Screen.HOME) View.VISIBLE else View.GONE
-        binding.asYouGoScreen.visibility = if (screen == Screen.AS_YOU_GO) View.VISIBLE else View.GONE
-        binding.recordRoundScreen.visibility = if (screen == Screen.RECORD_ROUND) View.VISIBLE else View.GONE
-        binding.summaryScreen.visibility = if (screen == Screen.SUMMARY) View.VISIBLE else View.GONE
-        binding.homeButton.visibility = if (screen == Screen.HOME) View.GONE else View.VISIBLE
-
-        when (screen) {
-            Screen.HOME -> refreshHistory()
-            Screen.AS_YOU_GO -> updateAsYouGoStatus()
-            Screen.RECORD_ROUND -> updateRecordRoundStatus()
-            Screen.SUMMARY -> summaryGame?.let { renderSummary(it) }
+    private fun configureWebView(assetLoader: WebViewAssetLoader?) {
+        binding.webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            allowFileAccess = false
+            allowContentAccess = false
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            setSupportMultipleWindows(false)
         }
-    }
 
-    private fun refreshHistory() {
-        cachedGames = storage.loadGames()
-        binding.gameHistoryContainer.removeAllViews()
-        if (cachedGames.isEmpty()) {
-            val emptyText = TextView(this).apply {
-                text = getString(R.string.no_games_recorded)
-                setTextColor(ContextCompat.getColor(context, R.color.md_sys_color_on_surface_variant))
-                textSize = 14f
-                gravity = Gravity.CENTER
-                textAlignment = View.TEXT_ALIGNMENT_CENTER
-                setPadding(0, 0, 0, dp(8))
+        binding.webView.webChromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                if (newProgress >= 100 && !mainFrameLoadFailed) {
+                    showWebView()
+                }
             }
-            binding.gameHistoryContainer.addView(emptyText)
-            return
-        }
-        cachedGames.asReversed().forEach { game ->
-            val itemBinding = ItemGameHistoryBinding.inflate(layoutInflater, binding.gameHistoryContainer, false)
-            itemBinding.historyScore.text = getString(R.string.score_out_of_25, game.totalHits())
-            itemBinding.historyDate.text = formatGameDate(game.startTimeIso)
-            itemBinding.root.setOnClickListener {
-                summaryGame = game
-                showScreen(Screen.SUMMARY)
+
+            override fun onJsConfirm(
+                view: WebView?,
+                url: String?,
+                message: String?,
+                result: JsResult
+            ): Boolean {
+                showJavaScriptConfirm(message.orEmpty(), result)
+                return true
             }
-            binding.gameHistoryContainer.addView(itemBinding.root)
+        }
+
+        binding.webView.webViewClient = object : WebViewClientCompat() {
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest
+            ): WebResourceResponse? = assetLoader?.shouldInterceptRequest(request.url)
+
+            @Deprecated("Deprecated in Java")
+            override fun shouldInterceptRequest(view: WebView, url: String): WebResourceResponse? =
+                assetLoader?.shouldInterceptRequest(Uri.parse(url))
+
+            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                mainFrameLoadFailed = false
+                val message = if (lastAttemptedUrl == PwaRuntime.launchUrl) {
+                    getString(R.string.loading_details)
+                } else {
+                    getString(R.string.loading_remote_details, lastAttemptedUrl.orEmpty())
+                }
+                showLoading(title = getString(R.string.loading_trapmaster), message = message)
+            }
+
+            override fun onPageFinished(view: WebView, url: String?) {
+                if (!mainFrameLoadFailed) {
+                    showWebView()
+                }
+            }
+
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest,
+                error: WebResourceErrorCompat
+            ) {
+                if (!request.isForMainFrame) return
+
+                mainFrameLoadFailed = true
+                val detail = error.description?.toString()?.takeIf(String::isNotBlank)
+                    ?: getString(R.string.loading_failed_message)
+                showError(
+                    title = getString(R.string.loading_failed_title),
+                    message = getString(R.string.loading_failed_reason, detail)
+                )
+            }
         }
     }
 
-    private fun recordShot(result: Int) {
-        val game = mutableGame ?: return
-        game.rounds[game.currentRound][game.currentShot] = result
-        advanceShot(game)
+    private fun showLoading(title: String, message: String) {
+        binding.loadingTitle.text = title
+        binding.loadingMessage.text = message
+        binding.startContainer.visibility = View.GONE
+        binding.loadingContainer.visibility = View.VISIBLE
+        binding.errorContainer.visibility = View.GONE
+        binding.webView.visibility = View.INVISIBLE
     }
 
-    private fun recordRound(hits: Int) {
-        val game = mutableGame ?: return
-        for (index in 0 until 5) {
-            game.rounds[game.currentRound][index] = if (index < hits) 1 else 0
-        }
-        if (!advanceRound(game)) {
-            updateRecordRoundStatus()
-        }
+    private fun showError(title: String, message: String) {
+        binding.errorTitle.text = title
+        binding.errorMessage.text = message
+        binding.startContainer.visibility = View.GONE
+        binding.loadingContainer.visibility = View.GONE
+        binding.errorContainer.visibility = View.VISIBLE
+        binding.webView.visibility = View.INVISIBLE
     }
 
-    private fun advanceShot(game: MutableGame) {
-        if (game.currentShot < 4) {
-            game.currentShot += 1
-            updateAsYouGoStatus()
-        } else {
-            advanceRound(game)
-        }
+    private fun showWebView() {
+        binding.startContainer.visibility = View.GONE
+        binding.loadingContainer.visibility = View.GONE
+        binding.errorContainer.visibility = View.GONE
+        binding.webView.visibility = View.VISIBLE
     }
 
-    private fun advanceRound(game: MutableGame): Boolean {
-        return if (game.currentRound < 4) {
-            game.currentRound += 1
-            game.currentShot = 0
-            when (currentScreen) {
-                Screen.AS_YOU_GO -> updateAsYouGoStatus()
-                Screen.RECORD_ROUND -> updateRecordRoundStatus()
+    private fun showStartScreen() {
+        binding.startContainer.visibility = View.VISIBLE
+        binding.loadingContainer.visibility = View.GONE
+        binding.errorContainer.visibility = View.GONE
+        binding.webView.visibility = View.INVISIBLE
+    }
+
+    private fun startBackgroundRefresh() {
+        startupExecutor.execute {
+            when (val outcome = updater.updateIfNeeded(force = false)) {
+                is TrapmasterUpdateOutcome.Failed -> {
+                    Log.w("TrapmasterUpdate", "Launch-time update failed: ${outcome.message}", outcome.cause)
+                }
+
                 else -> Unit
             }
-            false
-        } else {
-            finishGame(game)
-            true
         }
     }
 
-    private fun finishGame(game: MutableGame) {
-        val record = game.toGameRecord() ?: return
-        storage.saveGame(record)
-        summaryGame = record
-        mutableGame = null
-        refreshHistory()
-        showScreen(Screen.SUMMARY)
-    }
-
-    private fun updateAsYouGoStatus() {
-        val game = mutableGame ?: return
-        binding.asYouGoStatus.text = getString(R.string.round_status, game.currentRound + 1, game.currentShot + 1)
-    }
-
-    private fun updateRecordRoundStatus() {
-        val game = mutableGame ?: return
-        binding.recordRoundStatus.text = getString(R.string.record_round_title, game.currentRound + 1)
-    }
-
-    private fun renderSummary(game: GameRecord) {
-        binding.finalScore.text = getString(R.string.total_score, game.totalHits())
-        binding.summaryDetails.removeAllViews()
-        game.rounds.forEachIndexed { index, round ->
-            val itemBinding = ItemSummaryRoundBinding.inflate(layoutInflater, binding.summaryDetails, false)
-            itemBinding.roundTitle.text = getString(R.string.round_label, index + 1)
-            itemBinding.roundScore.text = getString(R.string.round_score, round.hitsCount())
-            itemBinding.roundShotsContainer.removeAllViews()
-            round.shots.forEach { shot ->
-                val icon = ImageView(this).apply {
-                    val size = dp(32)
-                    layoutParams = LinearLayout.LayoutParams(size, size).apply {
-                        setMargins(dp(4), 0, dp(4), 0)
-                    }
-                    setImageResource(if (shot == 1) R.drawable.ic_check_circle_24 else R.drawable.ic_cancel_24)
-                    contentDescription = getString(
-                        if (shot == 1) R.string.hit_icon_description else R.string.miss_icon_description
-                    )
-                    scaleType = ImageView.ScaleType.CENTER_INSIDE
-                    setPadding(dp(2), dp(2), dp(2), dp(2))
-                }
-                itemBinding.roundShotsContainer.addView(icon)
-            }
-            binding.summaryDetails.addView(itemBinding.root)
-        }
-    }
-
-    private fun confirmImport() {
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.confirm_import_title)
-            .setMessage(R.string.confirm_import_message)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(R.string.confirm_import_positive) { _, _ ->
-                importLauncher.launch(importMimeTypes)
-            }
-            .show()
-    }
-
-    private fun handleImportUri(uri: Uri) {
-        try {
-            val csv = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-            if (csv.isNullOrBlank()) {
-                showSnackbar(getString(R.string.import_failed))
-                return
-            }
-            val importedGames = parseGamesFromCsv(csv)
-            if (importedGames.isEmpty()) {
-                showSnackbar(getString(R.string.import_no_games_found))
-                return
-            }
-            val merged = LinkedHashMap<String, GameRecord>()
-            storage.loadGames().forEach { merged[it.startTimeIso] = it }
-            importedGames.forEach { merged[it.startTimeIso] = it }
-            val mergedList = merged.values.sortedBy { it.startTimeIso }
-            storage.saveGames(mergedList)
-            refreshHistory()
-            showSnackbar(resources.getQuantityString(R.plurals.import_success, importedGames.size, importedGames.size))
-        } catch (ignored: Exception) {
-            showSnackbar(getString(R.string.import_failed))
-        }
-    }
-
-    private fun parseGamesFromCsv(csv: String): List<GameRecord> {
-        val lines = csv.lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .toList()
-        if (lines.isEmpty()) return emptyList()
-        val dataLines = if (lines.first().lowercase(Locale.US).startsWith("game_start_time")) lines.drop(1) else lines
-        val grouped = mutableMapOf<String, MutableList<ShotEntry>>()
-        dataLines.forEach { line ->
-            val parts = line.split(",")
-            if (parts.size < 4) return@forEach
-            val startTime = parts[0].trim()
-            val roundNumber = parts[1].trim().toIntOrNull() ?: return@forEach
-            val shotNumber = parts[2].trim().toIntOrNull() ?: return@forEach
-            val result = parts[3].trim().toIntOrNull() ?: return@forEach
-            if (startTime.isEmpty() || roundNumber !in 1..5 || shotNumber !in 1..5 || result !in 0..1) return@forEach
-            grouped.getOrPut(startTime) { mutableListOf() }.add(ShotEntry(roundNumber, shotNumber, result))
-        }
-        val games = mutableListOf<GameRecord>()
-        grouped.forEach { (start, entries) ->
-            buildGameFromShots(start, entries)?.let { games += it }
-        }
-        return games
-    }
-
-    private fun buildGameFromShots(startTime: String, shots: List<ShotEntry>): GameRecord? {
-        if (shots.size != 25) return null
-        val rounds = mutableListOf<RoundRecord>()
-        val grouped = shots.groupBy { it.round }
-        if (grouped.size != 5) return null
-        for (roundIndex in 1..5) {
-            val roundShots = grouped[roundIndex] ?: return null
-            if (roundShots.size != 5) return null
-            val shotValues = arrayOfNulls<Int>(5)
-            roundShots.forEach { entry ->
-                val shotPosition = entry.shot - 1
-                if (shotPosition !in 0..4 || shotValues[shotPosition] != null) return null
-                shotValues[shotPosition] = entry.result
-            }
-            if (shotValues.any { it == null }) return null
-            rounds += RoundRecord(shotValues.map { it!! })
-        }
-        return GameRecord(rounds, startTime)
-    }
-
-    private fun confirmReset() {
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.confirm_reset_title)
-            .setMessage(R.string.confirm_reset_message)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(R.string.confirm_reset_positive) { _, _ ->
-                resetStats()
-            }
-            .show()
-    }
-
-    private fun resetStats() {
-        storage.clearGames()
-        cachedGames = emptyList()
-        summaryGame = null
-        if (currentScreen == Screen.SUMMARY) {
-            showScreen(Screen.HOME)
-        } else {
-            refreshHistory()
-        }
-        showSnackbar(getString(R.string.reset_success))
-    }
-
-    private fun formatGameDate(isoString: String): String {
-        return try {
-            val date = isoFormatter.parse(isoString)
-            if (date != null) historyFormatter.format(date) else isoString
-        } catch (ignored: Exception) {
-            isoString
-        }
-    }
-
-    private fun exportGames() {
-        val games = storage.loadGames()
-        if (games.isEmpty()) {
-            showSnackbar(getString(R.string.no_games_to_export))
+    private fun showJavaScriptConfirm(message: String, result: JsResult) {
+        if (isFinishing || isDestroyed) {
+            result.cancel()
             return
         }
-        val csvRows = buildString {
-            append("game_start_time,round_number,shot_number,result\r\n")
-            games.forEach { game ->
-                game.toCsvRows().forEach { row ->
-                    append(row).append("\r\n")
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.app_name)
+            .setMessage(message)
+            .setPositiveButton(android.R.string.ok) { _, _ -> result.confirm() }
+            .setNegativeButton(android.R.string.cancel) { _, _ -> result.cancel() }
+            .setOnCancelListener { result.cancel() }
+            .show()
+    }
+
+    private fun launchSelectedPwa() {
+        val url = launchSettings.effectiveUrl()
+        lastAttemptedUrl = url
+        if (url == PwaRuntime.launchUrl) {
+            installAndLoadBundledSnapshot()
+        } else {
+            loadConfiguredRemoteUrl(url)
+        }
+    }
+
+    private fun retryLaunch() {
+        val url = lastAttemptedUrl
+        if (url == null) {
+            showStartScreen()
+            return
+        }
+
+        if (url == PwaRuntime.launchUrl) {
+            installAndLoadBundledSnapshot()
+        } else {
+            loadConfiguredRemoteUrl(url)
+        }
+    }
+
+    private fun updateLaunchTargetSummary() {
+        val customUrl = launchSettings.currentCustomUrl()
+        binding.launchTargetSummary.text = if (customUrl == null) {
+            getString(R.string.launch_target_default)
+        } else {
+            getString(R.string.launch_target_custom, customUrl)
+        }
+    }
+
+    private fun showAdvancedSettingsDialog() {
+        if (isFinishing || isDestroyed) return
+
+        val contentView = layoutInflater.inflate(R.layout.dialog_advanced_settings, null)
+        val inputLayout = contentView.findViewById<TextInputLayout>(R.id.pwaUrlInputLayout)
+        val input = contentView.findViewById<TextInputEditText>(R.id.pwaUrlInput)
+        input.setText(launchSettings.currentCustomUrl().orEmpty())
+        input.setSelection(input.text?.length ?: 0)
+
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.advanced_settings_title)
+            .setView(contentView)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setNeutralButton(R.string.advanced_settings_reset, null)
+            .setPositiveButton(R.string.advanced_settings_save, null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val candidate = input.text?.toString().orEmpty().trim()
+                val validatedUrl = validateCustomPwaUrl(candidate)
+
+                if (validatedUrl == null) {
+                    inputLayout.error = getString(R.string.advanced_settings_invalid_url)
+                    return@setOnClickListener
                 }
+
+                inputLayout.error = null
+                launchSettings.saveCustomUrl(validatedUrl)
+                updateLaunchTargetSummary()
+                dialog.dismiss()
+            }
+
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                inputLayout.error = null
+                launchSettings.resetToDefault()
+                updateLaunchTargetSummary()
+                dialog.dismiss()
             }
         }
-        pendingExportCsv = csvRows
-        val fileName = getString(R.string.export_file_name, exportDateFormatter.format(Date()))
-        exportLauncher.launch(fileName)
+
+        dialog.show()
     }
 
-    private fun showSnackbar(message: String) {
-        Snackbar.make(binding.root, message, Snackbar.LENGTH_SHORT).show()
-    }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
-
-    private enum class Screen { HOME, AS_YOU_GO, RECORD_ROUND, SUMMARY }
-
-    private data class ShotEntry(val round: Int, val shot: Int, val result: Int)
-
-    private data class MutableGame(
-        val rounds: MutableList<MutableList<Int?>>,
-        var currentRound: Int,
-        var currentShot: Int,
-        val startTimeIso: String
-    ) {
-        fun toGameRecord(): GameRecord? {
-            val roundRecords = rounds.map { roundShots ->
-                if (roundShots.any { it == null }) return null
-                RoundRecord(roundShots.map { it ?: 0 })
-            }
-            return GameRecord(roundRecords, startTimeIso)
+    private fun validateCustomPwaUrl(candidate: String): String? {
+        if (candidate.isBlank()) {
+            return null
         }
+
+        val parsed = Uri.parse(candidate)
+        val scheme = parsed.scheme?.lowercase()
+        val host = parsed.host
+
+        if (scheme != "https" || host.isNullOrBlank()) {
+            return null
+        }
+
+        return parsed.toString()
     }
 }
