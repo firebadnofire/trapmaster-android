@@ -45,7 +45,7 @@ This app is available via the custom F-Droid repo:
 <img src="https://raw.githubusercontent.com/firebadnofire/trapmaster-android/refs/heads/main/README-assets/fdroid.png" width="220" />
 
 It is also published on the GitHub Releases page:  
-<https://github.com/firebadnofire/trapmaster-android/releases/tag/V1.0.0>
+<https://github.com/firebadnofire/trapmaster-android/releases/tag/V1.3.0>
 
 ---
 
@@ -133,5 +133,5 @@ This project is open for personal or educational use. Attribution is appreciated
 ---
 
 **Author:** Archuserorg  \
-**Version:** 1.0  \
-**Last Updated:** November 2025
+**Version:** V1.3.0  \
+**Last Updated:** April 2026

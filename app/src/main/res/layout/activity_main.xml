@@ -171,5 +171,14 @@
             android:layout_marginTop="16dp"
             android:text="@string/loading_retry"
             android:textAllCaps="false" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/changePwaUrlButton"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/change_pwa_url_button"
+            android:textAllCaps="false" />
     </LinearLayout>
 </FrameLayout>

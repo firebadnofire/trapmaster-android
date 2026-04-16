@@ -23,6 +23,7 @@ import org.archuser.trapmaster.databinding.ActivityMainBinding
 import org.archuser.trapmaster.pwa.LocalPwaManager
 import org.archuser.trapmaster.pwa.PwaLaunchSettings
 import org.archuser.trapmaster.pwa.PwaRuntime
+import org.archuser.trapmaster.pwa.RemotePwaManifestChecker
 import org.archuser.trapmaster.pwa.TrapmasterUpdateOutcome
 import org.archuser.trapmaster.pwa.TrapmasterUpdateScheduler
 import org.archuser.trapmaster.pwa.TrapmasterUpstreamUpdater
@@ -51,6 +52,9 @@ class MainActivity : AppCompatActivity() {
         binding.beginButton.setOnClickListener { launchSelectedPwa() }
         binding.advancedSettingsButton.setOnClickListener { showAdvancedSettingsDialog() }
         binding.retryButton.setOnClickListener { retryLaunch() }
+        binding.changePwaUrlButton.setOnClickListener {
+            showAdvancedSettingsDialog(launchAfterChange = true)
+        }
 
         updateLaunchTargetSummary()
         showStartScreen()
@@ -96,12 +100,30 @@ class MainActivity : AppCompatActivity() {
     private fun loadConfiguredRemoteUrl(url: String) {
         showLoading(
             title = getString(R.string.loading_trapmaster),
-            message = getString(R.string.loading_remote_details, url)
+            message = getString(R.string.checking_remote_manifest_details, url)
         )
-        configureWebView(assetLoader = null)
-        binding.webView.loadUrl(url)
-        TrapmasterUpdateScheduler.schedule(applicationContext)
-        startBackgroundRefresh()
+
+        startupExecutor.execute {
+            val result = runCatching {
+                RemotePwaManifestChecker.requireExpectedShortName(url)
+            }
+
+            runOnUiThread {
+                result.onSuccess {
+                    configureWebView(assetLoader = null)
+                    binding.webView.loadUrl(url)
+                    TrapmasterUpdateScheduler.schedule(applicationContext)
+                    startBackgroundRefresh()
+                }.onFailure { error ->
+                    val detail = error.message?.takeIf(String::isNotBlank)
+                        ?: getString(R.string.loading_failed_message)
+                    showError(
+                        title = getString(R.string.loading_failed_title),
+                        message = getString(R.string.loading_failed_reason, detail)
+                    )
+                }
+            }
+        }
     }
 
     private fun configureWebView(assetLoader: WebViewAssetLoader?) {
@@ -268,7 +290,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showAdvancedSettingsDialog() {
+    private fun showAdvancedSettingsDialog(launchAfterChange: Boolean = false) {
         if (isFinishing || isDestroyed) return
 
         val contentView = layoutInflater.inflate(R.layout.dialog_advanced_settings, null)
@@ -299,6 +321,9 @@ class MainActivity : AppCompatActivity() {
                 launchSettings.saveCustomUrl(validatedUrl)
                 updateLaunchTargetSummary()
                 dialog.dismiss()
+                if (launchAfterChange) {
+                    launchSelectedPwa()
+                }
             }
 
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
@@ -306,6 +331,9 @@ class MainActivity : AppCompatActivity() {
                 launchSettings.resetToDefault()
                 updateLaunchTargetSummary()
                 dialog.dismiss()
+                if (launchAfterChange) {
+                    launchSelectedPwa()
+                }
             }
         }
 

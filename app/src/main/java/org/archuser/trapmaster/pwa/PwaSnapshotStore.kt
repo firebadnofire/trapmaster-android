@@ -80,6 +80,7 @@ class PwaSnapshotStore(private val context: Context) {
     }
 
     private fun prepareSnapshotDirectory(snapshotDir: File, version: String) {
+        PwaManifestValidator.requireExpectedShortName(snapshotDir)
         versionServiceWorkerCache(snapshotDir, version.take(12))
     }
 

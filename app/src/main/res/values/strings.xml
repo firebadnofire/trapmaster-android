@@ -16,8 +16,10 @@
     <string name="advanced_settings_invalid_url">Enter a valid absolute HTTPS URL, or use Reset.</string>
     <string name="loading_trapmaster">Preparing offline Trapmaster…</string>
     <string name="loading_details">Installing the bundled web app from local storage.</string>
+    <string name="checking_remote_manifest_details">Checking configured PWA manifest: %1$s</string>
     <string name="loading_remote_details">Opening configured PWA: %1$s</string>
     <string name="loading_retry">Retry</string>
+    <string name="change_pwa_url_button">Change PWA URL</string>
     <string name="loading_failed_title">Trapmaster could not be prepared</string>
     <string name="loading_failed_message">The offline web app could not be installed locally.</string>
     <string name="loading_failed_reason">Details: %1$s</string>
