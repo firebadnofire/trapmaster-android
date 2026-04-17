@@ -69,6 +69,17 @@ android {
     namespace = "org.archuser.trapmaster"
     compileSdk = 36
 
+    val releaseKeystorePath = providers.environmentVariable("RELEASE_KEYSTORE_PATH").orNull
+    val releaseStorePassword = providers.environmentVariable("KEYSTORE_PASSWORD").orNull
+    val releaseKeyAlias = providers.environmentVariable("KEY_ALIAS").orNull
+    val releaseKeyPassword = providers.environmentVariable("KEY_PASSWORD").orNull
+    val releaseKeystoreFile = releaseKeystorePath?.let(::File)
+        ?: rootProject.layout.projectDirectory.file("release.keystore").asFile
+    val hasReleaseSigningConfig = releaseKeystoreFile.isFile &&
+        !releaseStorePassword.isNullOrBlank() &&
+        !releaseKeyAlias.isNullOrBlank() &&
+        !releaseKeyPassword.isNullOrBlank()
+
     defaultConfig {
         applicationId = "org.archuser.trapmaster"
         minSdk = 24
@@ -79,6 +90,15 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = releaseKeystoreFile
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -86,7 +106,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(
+                if (hasReleaseSigningConfig) "release" else "debug"
+            )
         }
     }
     compileOptions {

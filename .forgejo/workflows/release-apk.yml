@@ -1,0 +1,223 @@
+name: Release APK
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: docker
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install release tools
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          missing_tools=()
+          for tool in curl git jq; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              missing_tools+=("$tool")
+            fi
+          done
+
+          if [ "${#missing_tools[@]}" -eq 0 ]; then
+            exit 0
+          fi
+
+          if command -v apt-get >/dev/null 2>&1; then
+            apt_get="apt-get"
+            if command -v sudo >/dev/null 2>&1; then
+              apt_get="sudo apt-get"
+            fi
+            $apt_get update
+            $apt_get install -y --no-install-recommends "${missing_tools[@]}"
+          elif command -v apk >/dev/null 2>&1; then
+            apk_cmd="apk"
+            if command -v sudo >/dev/null 2>&1; then
+              apk_cmd="sudo apk"
+            fi
+            $apk_cmd add --no-cache "${missing_tools[@]}"
+          else
+            echo "Missing tools and no supported package manager found: ${missing_tools[*]}" >&2
+            exit 1
+          fi
+
+      - name: Validate release inputs
+        shell: bash
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          for name in KEY_ALIAS KEY_PASSWORD KEYSTORE_BASE64 KEYSTORE_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required secret: ${name}" >&2
+              exit 1
+            fi
+          done
+
+          for tool in base64 curl git jq; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              echo "Missing required tool: ${tool}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Fetch upstream PWA
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ ! -d trapmaster-upstream ]; then
+            git clone --depth 1 --branch main https://github.com/firebadnofire/trapmaster.git trapmaster-upstream
+          fi
+
+          if [ ! -f trapmaster-upstream/index.html ]; then
+            echo "trapmaster-upstream was fetched, but index.html is missing." >&2
+            exit 1
+          fi
+
+      - name: Decode release keystore
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          temp_dir="${RUNNER_TEMP:-${RUNNER_TMP:-/tmp}}"
+          keystore_path="${temp_dir}/trapmaster-release.keystore"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+          chmod 600 "$keystore_path"
+
+      - name: Build release APK
+        shell: bash
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          temp_dir="${RUNNER_TEMP:-${RUNNER_TMP:-/tmp}}"
+          export RELEASE_KEYSTORE_PATH="${temp_dir}/trapmaster-release.keystore"
+          if [ ! -f "$RELEASE_KEYSTORE_PATH" ]; then
+            echo "Release keystore was not decoded at $RELEASE_KEYSTORE_PATH" >&2
+            exit 1
+          fi
+          chmod +x ./gradlew
+          ./gradlew --no-daemon assembleRelease
+
+      - name: Prepare release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${FORGEJO_REF_NAME:-${GITHUB_REF_NAME:?Missing tag ref name}}"
+          shopt -s nullglob
+          apk_files=(app/build/outputs/apk/release/*.apk)
+
+          if [ "${#apk_files[@]}" -ne 1 ]; then
+            echo "Expected exactly one release APK, found ${#apk_files[@]}." >&2
+            exit 1
+          fi
+
+          mkdir -p dist
+          cp "${apk_files[0]}" "dist/trapmaster-${tag}.apk"
+
+      - name: Publish Forgejo release
+        shell: bash
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+        run: |
+          set -euo pipefail
+
+          api_url="${FORGEJO_API_URL:-${GITHUB_API_URL:?Missing Forgejo API URL}}"
+          repository="${FORGEJO_REPOSITORY:-${GITHUB_REPOSITORY:?Missing repository name}}"
+          tag="${FORGEJO_REF_NAME:-${GITHUB_REF_NAME:?Missing tag ref name}}"
+          token="${FORGEJO_TOKEN:-${GITHUB_TOKEN:?Missing Forgejo token}}"
+          owner="${repository%%/*}"
+          repo="${repository#*/}"
+          asset_path="dist/trapmaster-${tag}.apk"
+          release_name="Trapmaster ${tag}"
+          release_body="Automated APK release for ${tag}."
+
+          api_request() {
+            local method="$1"
+            local url="$2"
+            shift 2
+            curl --fail-with-body --silent --show-error \
+              --request "$method" \
+              --header "Authorization: token ${token}" \
+              "$@" \
+              "$url"
+          }
+
+          release_response="$(mktemp)"
+          release_status="$(curl --silent --show-error \
+            --output "$release_response" \
+            --write-out "%{http_code}" \
+            --header "Authorization: token ${token}" \
+            "${api_url}/repos/${owner}/${repo}/releases/tags/${tag}")"
+
+          if [ "$release_status" = "404" ]; then
+            release_payload="$(jq -n \
+              --arg tag "$tag" \
+              --arg name "$release_name" \
+              --arg body "$release_body" \
+              '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false, hide_archive_links: false}')"
+            release_json="$(api_request POST "${api_url}/repos/${owner}/${repo}/releases" \
+              --header "Content-Type: application/json" \
+              --data "$release_payload")"
+          elif [ "$release_status" = "200" ]; then
+            release_json="$(cat "$release_response")"
+            release_id="$(printf '%s' "$release_json" | jq -r '.id')"
+            release_payload="$(jq -n \
+              --arg tag "$tag" \
+              --arg name "$release_name" \
+              --arg body "$release_body" \
+              '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false, hide_archive_links: false}')"
+            release_json="$(api_request PATCH "${api_url}/repos/${owner}/${repo}/releases/${release_id}" \
+              --header "Content-Type: application/json" \
+              --data "$release_payload")"
+          else
+            cat "$release_response" >&2
+            echo "Failed to look up release for ${tag}: HTTP ${release_status}" >&2
+            exit 1
+          fi
+
+          release_id="$(printf '%s' "$release_json" | jq -r '.id')"
+          if [ -z "$release_id" ] || [ "$release_id" = "null" ]; then
+            echo "Release response did not include an id." >&2
+            exit 1
+          fi
+
+          asset_name="$(basename "$asset_path")"
+          asset_name_encoded="$(jq -nr --arg value "$asset_name" '$value|@uri')"
+          existing_asset_id="$(api_request GET "${api_url}/repos/${owner}/${repo}/releases/${release_id}/assets" \
+            | jq -r --arg name "$asset_name" '.[] | select(.name == $name) | .id' \
+            | head -n 1)"
+
+          if [ -n "$existing_asset_id" ]; then
+            api_request DELETE "${api_url}/repos/${owner}/${repo}/releases/${release_id}/assets/${existing_asset_id}" >/dev/null
+          fi
+
+          api_request POST "${api_url}/repos/${owner}/${repo}/releases/${release_id}/assets?name=${asset_name_encoded}" \
+            --form "attachment=@${asset_path}" >/dev/null
