@@ -69,45 +69,8 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Install Android SDK
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          export ANDROID_SDK_ROOT=/opt/android-sdk
-          env_file="${GITHUB_ENV:-${FORGEJO_ENV:?Missing environment file path}}"
-          path_file="${GITHUB_PATH:-${FORGEJO_PATH:?Missing path file path}}"
-
-          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
-
-          if [ ! -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-            temp_dir="$(mktemp -d)"
-            trap 'rm -rf "$temp_dir"' EXIT
-
-            curl --fail --location --silent --show-error \
-              https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
-              --output "$temp_dir/cmdline-tools.zip"
-            unzip -q "$temp_dir/cmdline-tools.zip" -d "$temp_dir"
-
-            rm -rf "$ANDROID_SDK_ROOT/cmdline-tools/latest"
-            mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/latest"
-            mv "$temp_dir/cmdline-tools/"* "$ANDROID_SDK_ROOT/cmdline-tools/latest/"
-          fi
-
-          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
-
-          sdkmanager --version >/dev/null
-          yes | sdkmanager --licenses >/dev/null
-
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0"
-
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$env_file"
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$env_file"
-          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> "$path_file"
-          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$path_file"
+      - name: Set up Android SDK
+        uses: https://github.com/android-actions/setup-android@v3
 
       - name: Validate release inputs
         shell: bash
