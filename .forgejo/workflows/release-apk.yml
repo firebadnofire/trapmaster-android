@@ -8,8 +8,55 @@ on:
 jobs:
   release:
     runs-on: ubuntu-22.04
+    container:
+      image: ubuntu:22.04
+      options: --network ci-network
 
     steps:
+      - name: Prepare APT and action runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          apt_get="apt-get"
+          tee_cmd="tee"
+          install_cmd="install"
+          chmod_cmd="chmod"
+          if command -v sudo >/dev/null 2>&1; then
+            apt_get="sudo apt-get"
+            tee_cmd="sudo tee"
+            install_cmd="sudo install"
+            chmod_cmd="sudo chmod"
+          fi
+
+          {
+            echo 'Acquire::http::Proxy "http://apt-cacher-ng:3142";'
+            echo 'Acquire::https::Proxy "http://apt-cacher-ng:3142";'
+          } | $tee_cmd /etc/apt/apt.conf.d/01proxy >/dev/null
+
+          $apt_get update
+          $apt_get install -y --no-install-recommends ca-certificates curl git gnupg jq unzip
+
+          needs_node=1
+          if command -v node >/dev/null 2>&1; then
+            node_major="$(node -p 'process.versions.node.split(".")[0]')"
+            if [ "$node_major" -ge 20 ]; then
+              needs_node=0
+            fi
+          fi
+
+          if [ "$needs_node" -eq 1 ]; then
+            $install_cmd -d -m 0755 /etc/apt/keyrings
+            curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+              | gpg --dearmor \
+              | $tee_cmd /etc/apt/keyrings/nodesource.gpg >/dev/null
+            $chmod_cmd a+r /etc/apt/keyrings/nodesource.gpg
+            echo 'deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main' \
+              | $tee_cmd /etc/apt/sources.list.d/nodesource.list >/dev/null
+            $apt_get update
+            $apt_get install -y --no-install-recommends nodejs
+          fi
+
       - name: Check out repository
         uses: actions/checkout@v4
         with:
@@ -24,40 +71,6 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install release tools
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          missing_tools=()
-          for tool in curl git jq; do
-            if ! command -v "$tool" >/dev/null 2>&1; then
-              missing_tools+=("$tool")
-            fi
-          done
-
-          if [ "${#missing_tools[@]}" -eq 0 ]; then
-            exit 0
-          fi
-
-          if command -v apt-get >/dev/null 2>&1; then
-            apt_get="apt-get"
-            if command -v sudo >/dev/null 2>&1; then
-              apt_get="sudo apt-get"
-            fi
-            $apt_get update
-            $apt_get install -y --no-install-recommends "${missing_tools[@]}"
-          elif command -v apk >/dev/null 2>&1; then
-            apk_cmd="apk"
-            if command -v sudo >/dev/null 2>&1; then
-              apk_cmd="sudo apk"
-            fi
-            $apk_cmd add --no-cache "${missing_tools[@]}"
-          else
-            echo "Missing tools and no supported package manager found: ${missing_tools[*]}" >&2
-            exit 1
-          fi
 
       - name: Validate release inputs
         shell: bash
