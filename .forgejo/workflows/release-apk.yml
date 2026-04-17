@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+      - "V*"
 
 jobs:
   release:
@@ -76,13 +77,14 @@ jobs:
         shell: bash
         env:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          GH_KEY: ${{ secrets.GH_KEY }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           set -euo pipefail
 
-          for name in KEY_ALIAS KEY_PASSWORD KEYSTORE_BASE64 KEYSTORE_PASSWORD; do
+          for name in GH_KEY KEY_ALIAS KEY_PASSWORD KEYSTORE_BASE64 KEYSTORE_PASSWORD; do
             if [ -z "${!name:-}" ]; then
               echo "Missing required secret: ${name}" >&2
               exit 1
@@ -234,3 +236,90 @@ jobs:
 
           api_request POST "${api_url}/repos/${owner}/${repo}/releases/${release_id}/assets?name=${asset_name_encoded}" \
             --form "attachment=@${asset_path}" >/dev/null
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_KEY: ${{ secrets.GH_KEY }}
+        run: |
+          set -euo pipefail
+
+          api_url="https://api.github.com"
+          upload_url="https://uploads.github.com"
+          owner="firebadnofire"
+          repo="trapmaster-android"
+          tag="${FORGEJO_REF_NAME:-${GITHUB_REF_NAME:?Missing tag ref name}}"
+          target_commitish="${FORGEJO_SHA:-${GITHUB_SHA:?Missing commit SHA}}"
+          token="${GH_KEY:?Missing GitHub token}"
+          asset_path="dist/trapmaster-${tag}.apk"
+          asset_name="$(basename "$asset_path")"
+          asset_name_encoded="$(jq -nr --arg value "$asset_name" '$value|@uri')"
+          release_name="Trapmaster ${tag}"
+          release_body="Automated APK release for ${tag}."
+
+          github_request() {
+            local method="$1"
+            local url="$2"
+            shift 2
+            curl --fail-with-body --silent --show-error \
+              --request "$method" \
+              --header "Accept: application/vnd.github+json" \
+              --header "Authorization: Bearer ${token}" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "$@" \
+              "$url"
+          }
+
+          release_response="$(mktemp)"
+          release_status="$(curl --silent --show-error \
+            --output "$release_response" \
+            --write-out "%{http_code}" \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${token}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "${api_url}/repos/${owner}/${repo}/releases/tags/${tag}")"
+
+          if [ "$release_status" = "404" ]; then
+            release_payload="$(jq -n \
+              --arg tag "$tag" \
+              --arg target_commitish "$target_commitish" \
+              --arg name "$release_name" \
+              --arg body "$release_body" \
+              '{tag_name: $tag, target_commitish: $target_commitish, name: $name, body: $body, draft: false, prerelease: false, make_latest: "true"}')"
+            release_json="$(github_request POST "${api_url}/repos/${owner}/${repo}/releases" \
+              --header "Content-Type: application/json" \
+              --data "$release_payload")"
+          elif [ "$release_status" = "200" ]; then
+            release_json="$(cat "$release_response")"
+            release_id="$(printf '%s' "$release_json" | jq -r '.id')"
+            release_payload="$(jq -n \
+              --arg tag "$tag" \
+              --arg name "$release_name" \
+              --arg body "$release_body" \
+              '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false, make_latest: "true"}')"
+            release_json="$(github_request PATCH "${api_url}/repos/${owner}/${repo}/releases/${release_id}" \
+              --header "Content-Type: application/json" \
+              --data "$release_payload")"
+          else
+            cat "$release_response" >&2
+            echo "Failed to look up GitHub release for ${tag}: HTTP ${release_status}" >&2
+            exit 1
+          fi
+
+          release_id="$(printf '%s' "$release_json" | jq -r '.id')"
+          if [ -z "$release_id" ] || [ "$release_id" = "null" ]; then
+            echo "GitHub release response did not include an id." >&2
+            exit 1
+          fi
+
+          existing_asset_id="$(github_request GET "${api_url}/repos/${owner}/${repo}/releases/${release_id}/assets" \
+            | jq -r --arg name "$asset_name" '.[] | select(.name == $name) | .id' \
+            | head -n 1)"
+
+          if [ -n "$existing_asset_id" ]; then
+            github_request DELETE "${api_url}/repos/${owner}/${repo}/releases/assets/${existing_asset_id}" >/dev/null
+          fi
+
+          github_request POST "${upload_url}/repos/${owner}/${repo}/releases/${release_id}/assets?name=${asset_name_encoded}" \
+            --header "Content-Type: application/vnd.android.package-archive" \
+            --data-binary "@${asset_path}" >/dev/null
