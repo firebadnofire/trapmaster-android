@@ -122,6 +122,16 @@ The workflow validates all required secrets before it builds:
 release assets for `firebadnofire/trapmaster-android`. For a fine-grained GitHub
 token, use repository `Contents: Read and write`.
 
+Secret scope matters. This repository is published from the
+`android/trapmaster-android` Forgejo repository, so `GH_KEY` must be available to
+that repository's workflows. Add it in one of these places:
+
+- `/{owner}/{repo}/settings/actions/secrets` for this repository only.
+- `/org/{org}/settings/actions/secrets` if the owner is an organization and the
+  token should be available to all repositories in that organization.
+- `/user/settings/actions/secrets` only works for repositories that belong to that
+  user account.
+
 Do not hardcode any signing values or tokens in the workflow.
 
 ## Android Signing
@@ -358,4 +368,3 @@ failure persists, check whether GitHub renamed the previous asset or left a fail
 GitHub supports `make_latest: "true"` and the workflow sets it on create/update.
 Drafts and prereleases cannot be latest, so also verify that the release is not a
 draft and not marked as a prerelease.
-
