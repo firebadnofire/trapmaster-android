@@ -261,8 +261,9 @@ https://uploads.github.com/repos/{owner}/{repo}/releases/{release_id}/assets
 
 If GitHub release creation fails because the tag does not exist on GitHub, verify
 that the tag was pushed or mirrored to `firebadnofire/trapmaster-android`. The
-workflow creates the release against the current Forgejo commit SHA, but GitHub
-must be able to resolve the target commit/tag in the target repository.
+workflow does not pass Forgejo's commit SHA as `target_commitish`, because that
+SHA may not exist in GitHub. If the tag is missing on GitHub, GitHub creates it
+from the target repository's default branch when the release is created.
 
 ## Idempotency
 

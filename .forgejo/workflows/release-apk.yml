@@ -253,7 +253,6 @@ jobs:
           owner="firebadnofire"
           repo="trapmaster-android"
           tag="${FORGEJO_REF_NAME:-${GITHUB_REF_NAME:?Missing tag ref name}}"
-          target_commitish="${FORGEJO_SHA:-${GITHUB_SHA:?Missing commit SHA}}"
           token="${GH_KEY:?Missing GitHub token}"
           asset_path="dist/trapmaster-${tag}.apk"
           asset_name="$(basename "$asset_path")"
@@ -264,14 +263,25 @@ jobs:
           github_request() {
             local method="$1"
             local url="$2"
+            local response_file
+            local status
             shift 2
-            curl --fail-with-body --silent --show-error \
+            response_file="$(mktemp)"
+            status="$(curl --silent --show-error \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
               --request "$method" \
               --header "Accept: application/vnd.github+json" \
               --header "Authorization: Bearer ${token}" \
               --header "X-GitHub-Api-Version: 2022-11-28" \
               "$@" \
-              "$url"
+              "$url")"
+            if [ "$status" -lt 200 ] || [ "$status" -gt 299 ]; then
+              cat "$response_file" >&2
+              echo "GitHub API request failed: ${method} ${url} returned HTTP ${status}" >&2
+              exit 1
+            fi
+            cat "$response_file"
           }
 
           release_response="$(mktemp)"
@@ -286,10 +296,9 @@ jobs:
           if [ "$release_status" = "404" ]; then
             release_payload="$(jq -n \
               --arg tag "$tag" \
-              --arg target_commitish "$target_commitish" \
               --arg name "$release_name" \
               --arg body "$release_body" \
-              '{tag_name: $tag, target_commitish: $target_commitish, name: $name, body: $body, draft: false, prerelease: false, make_latest: "true"}')"
+              '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false, make_latest: "true"}')"
             release_json="$(github_request POST "${api_url}/repos/${owner}/${repo}/releases" \
               --header "Content-Type: application/json" \
               --data "$release_payload")"
