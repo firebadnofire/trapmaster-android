@@ -87,6 +87,10 @@ jobs:
           for name in GH_KEY KEY_ALIAS KEY_PASSWORD KEYSTORE_BASE64 KEYSTORE_PASSWORD; do
             if [ -z "${!name:-}" ]; then
               echo "Missing required secret: ${name}" >&2
+              if [ "$name" = "GH_KEY" ]; then
+                echo "GH_KEY must be available to this repository's workflow." >&2
+                echo "For an owner/organization repository, add it under the repository or owner/organization Actions secrets, not only under personal user settings." >&2
+              fi
               exit 1
             fi
           done
